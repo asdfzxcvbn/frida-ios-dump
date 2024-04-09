@@ -72,27 +72,6 @@ def get_usb_iphone():
     return device
 
 
-def generate_ipa(path, display_name):
-    ipa_filename = display_name + '.ipa'
-
-    print('Generating "{}"'.format(ipa_filename))
-    try:
-        app_name = file_dict['app']
-
-        for key, value in file_dict.items():
-            from_dir = os.path.join(path, key)
-            to_dir = os.path.join(path, app_name, value)
-            if key != 'app':
-                shutil.move(from_dir, to_dir)
-
-        target_dir = './' + PAYLOAD_DIR
-        zip_args = ('zip', '-qr', os.path.join(os.getcwd(), ipa_filename), target_dir)
-        subprocess.check_call(zip_args, cwd=TEMP_DIR)
-        shutil.rmtree(PAYLOAD_PATH)
-    except Exception as e:
-        print(e)
-        finished.set()
-
 def on_message(message, data):
     t = tqdm(unit='B',unit_scale=True,unit_divisor=1024,miniters=1)
     last_sent = [0]
@@ -276,14 +255,42 @@ def open_target_app(device, name_or_bundleid):
     return session, display_name, bundle_identifier
 
 
-def start_dump(session, ipa_name):
+def generate_ipa(path, display_name, output_dir):
+    ipa_filename = display_name + '.ipa'
+
+    print('Generating "{}"'.format(ipa_filename))
+    try:
+        app_name = file_dict['app']
+
+        for key, value in file_dict.items():
+            from_dir = os.path.join(path, key)
+            to_dir = os.path.join(path, app_name, value)
+            if key != 'app':
+                shutil.move(from_dir, to_dir)
+
+        target_dir = './' + PAYLOAD_DIR
+        # zip_args = ('zip', '-qr', os.path.join(os.getcwd(), ipa_filename), target_dir)
+        cwd = os.getcwd()
+        os.chdir(TEMP_DIR)
+        os.system(f"mv {target_dir}/* {cwd}/{output_dir}")
+        # zip_args = ("mv", target_dir, output_dir)
+        # subprocess.check_call(zip_args, cwd=TEMP_DIR
+        # )
+        os.chdir(cwd)
+        shutil.rmtree(PAYLOAD_PATH)
+    except Exception as e:
+        print(e)
+        finished.set()
+
+
+def start_dump(session, ipa_name, output_dir):
     print('Dumping {} to {}'.format(display_name, TEMP_DIR))
 
     script = load_js_file(session, DUMP_JS)
     script.post('dump')
     finished.wait()
 
-    generate_ipa(PAYLOAD_PATH, ipa_name)
+    generate_ipa(PAYLOAD_PATH, ipa_name, output_dir)
 
     if session:
         session.detach()
@@ -293,6 +300,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='frida-ios-dump (by AloneMonkey v2.0)')
     parser.add_argument('-l', '--list', dest='list_applications', action='store_true', help='List the installed apps')
     parser.add_argument('-o', '--output', dest='output_ipa', help='Specify name of the decrypted IPA')
+    parser.add_argument('-d', '--dir', dest='output_dir', help='Specify name of the output dir')
     parser.add_argument('-H', '--host', dest='ssh_host', help='Specify SSH hostname')
     parser.add_argument('-p', '--port', dest='ssh_port', help='Specify SSH port')
     parser.add_argument('-u', '--user', dest='ssh_user', help='Specify SSH username')
@@ -337,9 +345,9 @@ if __name__ == '__main__':
             (session, display_name, bundle_identifier) = open_target_app(device, name_or_bundleid)
             if output_ipa is None:
                 output_ipa = display_name
-            output_ipa = re.sub('\.ipa$', '', output_ipa)
+            output_ipa = re.sub(r'\.ipa$', '', output_ipa)
             if session:
-                start_dump(session, output_ipa)
+                start_dump(session, output_ipa, args.output_dir)
         except paramiko.ssh_exception.NoValidConnectionsError as e:
             print(e)
             print('Try specifying -H/--hostname and/or -p/--port')
